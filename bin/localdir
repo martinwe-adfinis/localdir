@@ -1,0 +1,153 @@
+#!/bin/sh -
+
+set -fu
+
+readonly E_USER=1
+readonly E_INTERNAL=13
+
+readonly LOCALDIR=~/.local
+
+true() { return 0; }
+false() { return 1; }
+
+# GIT ==========================================================================
+
+git_main()
+{
+	git -C "$LOCALDIR" "$@"
+}
+
+# WRAPPER ======================================================================
+
+wrapper_print_help()
+{
+	cat <<- EOF
+	localdir wrapper - manage application wrapping in localdir
+
+	Usage: localdir wrapper -h
+	       localdir wrapper SUBCOMMAND [SUBCMDOPTS...]
+
+	Options:
+	  -h         Display this help message and abort.
+
+	Sub-Commands:
+	  list       List available wrappers (aliases: l)
+
+	Each sub-command may accept further options and arguments.
+	Run them with -h for more information.
+	EOF
+}
+
+wrapper_main()
+{
+	# Options:
+	while getopts :h opt; do
+		case "$opt" in
+			(h) wrapper_print_help; exit $E_USER ;;
+			(:) die $E_USER 'Missing argument for -%s' "$OPTARG" ;;
+			('?') die $E_USER 'Unknown option -%s' "$OPTARG" ;;
+			(*) die $E_INTERNAL 'Unhandled option -%s' "$OPTARG" ;;
+		esac
+	done
+	shift $((OPTIND - 1))
+	unset OPTARG
+
+	# Sub-command:
+	test $# -gt 0 || die $E_USER 'Missing wrapper sub-command'
+	readonly WRAPPER_SUBCOMMAND=$1; shift
+	case "$WRAPPER_SUBCOMMAND" in
+		(l|list) wrapper_list_main "$@" ;;
+		(*) die $E_USER 'Unknown wrapper sub-command: %s' "$WRAPPER_SUBCOMMAND"
+	esac
+}
+
+wrapper_list_main()
+{
+	# Options:
+	while getopts :h opt; do
+		case "$opt" in
+			(h) wrapper_print_help; exit $E_USER ;;
+			(:) die $E_USER 'Missing argument for -%s' "$OPTARG" ;;
+			('?') die $E_USER 'Unknown option -%s' "$OPTARG" ;;
+			(*) die $E_INTERNAL 'Unhandled option -%s' "$OPTARG" ;;
+		esac
+	done
+	shift $((OPTIND - 1))
+	unset OPTARG
+
+	# No positional arguments:
+	test $# -eq 0 || die $E_USER 'Trailing arguments: %s' "$*"
+
+	set +f
+	for f in "$XDG_DATA_HOME"/localdir/wrapper/available/*; do
+		test -e "$f" || continue
+		f_base=${f##*/}
+		printf '%s' "$f_base"
+		if [ -e "$XDG_DATA_HOME"/localdir/wrapper/enabled/"$f_base" ]; then
+			printf ' \033[32m[enabled]\033[0m'
+		fi
+		printf '\n'
+	done
+}
+
+# GLOBAL =======================================================================
+
+die()
+{
+	retval=$(($1)); shift
+	{
+		# shellcheck disable=SC2059
+		printf "$@"
+		printf '\n'
+		if [ $retval -eq $E_USER ]; then
+			printf 'Run with -h for help.\n'
+		fi
+	} >&2
+	exit $retval
+}
+
+print_help()
+{
+	cat <<- EOF
+	localdir - manage the localdir (~/.local)
+
+	Usage: localdir -h
+	       localdir SUBCOMMAND [SUBCMDOPTS...]
+
+	Options:
+	  -h         Display this help message and abort.
+
+	Sub-Commands:
+	  git        Run Git inside the localdir (aliases: g)
+	  wrapper    Invoke wrapper command actions (aliases: w)
+
+	Each sub-command may accept further options and arguments.
+	Run them with -h for more information.
+	EOF
+}
+
+main()
+{
+	# Options:
+	while getopts :h opt; do
+		case "$opt" in
+			(h) print_help; exit $E_USER ;;
+			(:) die $E_USER 'Missing argument for -%s' "$OPTARG" ;;
+			('?') die $E_USER 'Unknown option -%s' "$OPTARG" ;;
+			(*) die $E_INTERNAL 'Unhandled option -%s' "$OPTARG" ;;
+		esac
+	done
+	shift $((OPTIND - 1))
+	unset OPTARG
+	
+	# Sub-command:
+	test $# -gt 0 || die $E_USER 'Missing sub-command'
+	readonly SUBCOMMAND=$1; shift
+	case "$SUBCOMMAND" in
+		(g|git) git_main "$@" ;;
+		(w|wrapper) wrapper_main "$@" ;;
+		(*) die $E_USER 'Unknown sub-command: %s' "$SUBCOMMAND"
+	esac
+}
+
+main "$@"

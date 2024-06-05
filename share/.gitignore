@@ -25,5 +25,8 @@
 /evolution/
 /gvfs-metadata/
 
+# JavaScript
+/pnpm/
+
 # Python:
 /virtualenv/

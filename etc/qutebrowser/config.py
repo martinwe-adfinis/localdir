@@ -112,6 +112,7 @@ c.url.searchengines = {
     'hayoo':   'http://holumbus.fh-wedel.de/hayoo/hayoo.html?query={}',
     'hulbee':  'https://hulbee.com/?query={}&region=browser&uiLanguage=browser',
     'gw':      'https://gnugeneration.epfl.ch/accueil?do=search&id={}',
+    'npm':     'https://www.npmjs.com/search?q={}',
 
     'man':     'https://man.archlinux.org/search?q={}',
     'debman':  'https://dyn.manpages.debian.org/jump?q={}',

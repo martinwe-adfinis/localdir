@@ -1,0 +1,213 @@
+#!/bin/sh -
+
+# Qutebrowser session manager. To be used in conjunction with the qutebrowser
+# session wrapper script.
+# Written by ayekat on a calm Thursday morning in October 2024.
+
+set -fu
+
+# Exit codes:
+E_USER=1
+E_SESSION=2
+E_SYSTEM=3
+E_INTERNAL=13
+readonly E_USER E_INTERNAL
+
+# Environment variables
+XDG_STATE_HOME=${XDG_STATE_HOME:-$HOME/.local/state}
+XDG_CACHE_HOME=${XDG_CACHE_HOME:-$HOME/.cache}
+readonly XDG_STATE_HOME XDG_CACHE_HOME
+
+# HELPERS ======================================================================
+
+die()
+{
+	retval=$(($1))
+	shift
+	if [ $# -gt 0 ]; then
+		# shellcheck disable=SC2059
+		printf "$@"
+		printf '\n'
+		if [ $retval -eq $E_USER ]; then
+			printf 'Run with -h for help.\n'
+		fi
+	fi >&2
+	exit $retval
+}
+
+session_exists()
+{
+	test -d "$XDG_STATE_HOME"/qutebrowser/"$1"
+}
+
+session_is_active()
+{
+	set +f
+	for file in "$XDG_RUNTIME_DIR"/qutebrowser/"$1"/runtime/*; do
+		test -e "$file" || continue  # POSIX...
+		if [ -S "$file" ]; then
+			# TODO check if the socket file is correctly named
+			return
+		fi
+	done
+	set -f
+	false
+}
+
+_session_size()
+{
+	if ! du=$(du -sh "$3"/qutebrowser/"$1"); then
+		die $E_SYSTEM '%s: Could not obtain size for session %s data' "$1" "$2"
+	fi
+	read -r size _ <<- EOF
+	$du
+	EOF
+	printf '%s' "$size"
+}
+
+session_size_cache() { _session_size "$1" 'cache' "$XDG_CACHE_HOME"; }
+session_size_state() { _session_size "$1" 'state' "$XDG_STATE_HOME"; }
+
+# LIST =========================================================================
+
+print_help_list()
+{
+	cat <<- EOF
+	qsm list - list qutebrowser session
+
+	Usage: qsm list -h
+	       qsm list [OPTIONS]
+
+	Options:
+	  -a   List all session, not just the active ones.
+	  -h   Show this help message and exit.
+	  -s   Show state and cache sizes for each session
+	EOF
+}
+
+action_list()
+{
+	LIST_ALL=false
+	LIST_SIZES=false
+	while getopts :ahs opt; do
+		case "$opt" in
+			(a) LIST_ALL=true ;;
+			(h) print_help_list; exit 0 ;;
+			(s) LIST_SIZES=true ;;
+			(:) die $E_USER 'Missing argument for -%s' "$OPTARG" ;;
+			('?') die $E_USER 'Unknown option -%s' "$OPTARG" ;;
+			(*) die $E_INTERNAL 'Unhandled option -%s' "$OPTARG" ;;
+		esac
+	done
+	shift $((OPTIND - 1))
+	unset OPTARG
+	readonly LIST_ALL LIST_SIZES
+
+	test $# -eq 0 || die $E_USER 'Trailing arguments: %s' "$*"
+
+	set +f
+	for dir in "$XDG_STATE_HOME"/qutebrowser/*; do
+		set -f
+		test -e "$dir" || continue  # POSIX...
+		session=${dir##*/}
+
+		active=false
+		if session_is_active "$session"; then
+			active=true
+		fi
+
+		if $LIST_ALL || $active; then
+			printf '%s' "$session"
+			if $LIST_SIZES; then
+				state_size=$(session_size_state "$session") || die $?
+				cache_size=$(session_size_cache "$session") || die $?
+				printf ' (state=%s, cache=%s)' "$state_size" "$cache_size"
+			fi
+			if $LIST_ALL && $active; then
+				printf ' [\033[32mactive\033[0m]'
+			fi
+			printf '\n'
+		fi
+	done
+	set -f
+}
+
+# DELETE =======================================================================
+
+print_help_delete()
+{
+	cat <<- EOF
+	qsm delete - delete a qutebrowser session
+
+	Usage: qsm delete -h
+	       qsm delete SESSION
+
+	Options:
+	  -h   Show this help message and exit.
+	EOF
+}
+
+action_delete()
+{
+	while getopts :h opt; do
+		case "$opt" in
+			(h) print_help_delete; exit 0 ;;
+			(:) die $E_USER 'Missing argument for -%s' "$OPTARG" ;;
+			('?') die $E_USER 'Unknown option -%s' "$OPTARG" ;;
+			(*) die $E_INTERNAL 'Unhandled option -%s' "$OPTARG" ;;
+		esac
+	done
+	shift $((OPTIND - 1))
+	unset OPTARG
+
+	test $# -gt 0 || die $E_USER 'Missing session name'
+	session=$1; shift
+	test $# -eq 0 || die $E_USER 'Trailing arguments: %s' "$*"
+
+	if session_is_active "$session"; then
+		die $E_SESSION '%s: cannot kill active session' "$session"
+	fi
+
+	rm -r "$XDG_STATE_HOME"/qutebrowser/"$session" \
+	      "$XDG_CACHE_HOME"/qutebrowser/"$session"
+}
+
+# GENERAL ======================================================================
+
+print_help()
+{
+	cat <<- EOF
+	qsm - qutebrowser session manager
+
+	Usage: qsm -h
+	       qsm ACTION -h
+	       qsm ACTION [OPTIONS]
+
+	Options:
+	  -h   Show this help message and exit.
+
+	Actions:
+	  list    List sessions (aliases: ls, l)
+	  delete  Delete a session (aliases: remove, rm)
+	EOF
+}
+
+while getopts :h opt; do
+	case "$opt" in
+		(h) print_help; exit 0 ;;
+		(:) die $E_USER 'Missing argument for -%s' "$OPTARG" ;;
+		('?') die $E_USER 'Unknown option -%s' "$OPTARG" ;;
+		(*) die $E_INTERNAL 'Unhandled option -%s' "$OPTARG" ;;
+	esac
+done
+shift $((OPTIND - 1))
+unset OPTARG
+
+test $# -gt 0 || die $E_USER 'Missing action'
+ACTION=$1; shift
+
+case "$ACTION" in
+	(list|ls|l) action_list "$@" ;;
+	(delete|remove|rm) action_delete "$@" ;;
+	(*) die $E_USER 'Unknown action: %s' "$ACTION" ;;
+esac

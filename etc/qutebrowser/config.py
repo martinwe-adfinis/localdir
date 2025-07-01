@@ -41,6 +41,9 @@ c.content.tls.certificate_errors = 'ask-block-thirdparty'
 # Focus:
 c.new_instance_open_target = 'tab-silent'
 
+# Media (TODO, check if this even works, but only after v3.5.2 fixes audio/video perms):
+#c.qt.args+=["enable-webrtc-allow-input-volume-adjustment=disabled"]
+
 # CONTROL ======================================================================
 
 # Browser:
